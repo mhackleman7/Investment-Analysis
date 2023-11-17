@@ -1,0 +1,71 @@
+"""
+Created on Fri Nov 17 11:55:53 2023
+
+@author: mhack
+"""
+
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import datetime as dt
+import copy
+from scipy.optimize import minimize
+
+
+start = start = dt.datetime.today()-dt.timedelta(3650)
+end = dt.datetime.today()
+
+tickers = ["AMZN", "GOOG", "MSFT", "SPY", "AAPL", "INTC","DB","NOG","CVX", "HD","XOM", "AMGN", "LMT", "BMY", "BLK", "C", "USB", "KDP", "JPM", "ENB", "GS", "LAZ", "OXY", "NVDA", "WM", "V", "UNH", "WNT", "COST", "BAC", "CMCSA"]
+
+ohlcv_daily = {}
+
+num_stocks = len(tickers)
+init_weights = [1 / num_stocks] * num_stocks
+
+for ticker in tickers:
+    ohlcv_daily[ticker] = yf.download(ticker,start,end,interval ='1d')
+    ohlcv_daily[ticker].dropna(inplace=True, how='all')
+
+ohlc_dict =copy.deepcopy(ohlcv_daily)
+return_df =pd.DataFrame()    
+for ticker in tickers:
+    print("Calculating Daily Return For", ticker)
+    ohlc_dict[ticker]["daily_ret"] = ohlc_dict[ticker]["Adj Close"].pct_change()
+    return_df[ticker] = ohlc_dict[ticker]["daily_ret"]
+return_df.dropna(inplace=True)
+
+def getPortRisk(weights):
+    num_stocks = len(return_df.columns)
+    vcv = return_df.cov()
+    
+    var_p = np.dot(np.transpose(weights), np.dot(vcv, weights))
+    sd_p = np.sqrt(var_p)
+    sd_p_annual = sd_p * np.sqrt(250)
+    return sd_p_annual
+
+bounds = tuple((0,1) for i in range(num_stocks))
+cons = ({'type' : 'eq', 'fun' : lambda x : np.sum(x) - 1})
+results = minimize(fun=getPortRisk, x0=init_weights, bounds=bounds, constraints=cons)
+
+getPortRisk(init_weights)
+
+def getPortReturn(init_weights):
+    exp_ret_portfolio = np.dot(np.transpose(init_weights), return_df.mean()) * 250
+    
+    return exp_ret_portfolio
+
+getPortReturn(init_weights)
+
+target_return = 0.3
+bounds2 = tuple((0,1) for i in range(num_stocks))
+cons2 = ({'type' : 'eq', 'fun' : lambda w : np.sum(w) - 1},
+       {'type' : 'eq', 'fun' : lambda x : x.dot(return_df.mean()) * 250 - target_return})
+results2 = minimize(fun=getPortReturn, x0=init_weights, bounds=bounds, constraints=cons)
+results2
+
+getPortReturn(weights=results2['x'])
+
+optimised_weights = pd.DataFrame(results2['x'])
+optimised_weights.index = return_df.columns
+
+optimised_weights
